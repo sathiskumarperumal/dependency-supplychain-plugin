@@ -2,15 +2,18 @@
 #
 # Drop this into a Java/Maven target repo at: .github/workflows/depscan.yml
 #
+# ORDER OF EXECUTION: detection/report FIRST (and resilient), then the resolution-dependent
+# checks, then the intelligence (scoring/remediation/gate). The report is produced and uploaded
+# even when the build can't resolve a dependency (e.g. a typosquatted/unresolvable coordinate) —
+# such a coordinate is a *finding to report*, not a reason to abort before reporting.
+#
 # Triggers:
 #   • schedule (nightly)   -> mode "full": scan -> score -> remediate -> open/update fix PR -> gate
 #   • pull_request         -> mode "gate-only": run only the Stage 4 gate on the PR
 #   • workflow_dispatch    -> manual run (defaults to full)
 #
-# Hybrid design: the deterministic scanners run as native steps (fast, cacheable, free); Claude
-# does the *judgement* — risk scoring, consolidated remediation + PR authoring, and the gate verdict.
-#
-# Required repo secrets:  ANTHROPIC_API_KEY, NVD_API_KEY   (GITHUB_TOKEN is provided automatically)
+# Required repo secrets:  ANTHROPIC_API_KEY (for the Claude step), NVD_API_KEY
+# (GITHUB_TOKEN is provided automatically.)
 # Governance: this workflow NEVER merges. Enforce "require a human review before merge" with a
 # branch-protection rule on the default branch — that is the human-in-the-loop.
 
@@ -31,13 +34,16 @@ permissions:
   pull-requests: write            # open PR / post review
   issues: write                   # MAJOR_REVIEW / BUILD_BROKEN tracking issues
 
-concurrency:                      # one run per ref; newer run cancels an in-flight one
+concurrency:
   group: depscan-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   depscan:
     runs-on: ubuntu-latest
+    env:
+      # secrets cannot be used directly in `if:` — map presence to an env flag
+      HAS_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -47,7 +53,6 @@ jobs:
           java-version: "17"
           cache: maven
 
-      # ---- warm scanner DBs (the "persistent volume" becomes an Actions cache) ----
       - name: Cache NVD + Grype databases
         uses: actions/cache@v4
         with:
@@ -55,21 +60,14 @@ jobs:
             ~/.m2/repository/org/owasp/dependency-check-data
             ~/.cache/grype/db
           key: depscan-db-${{ github.run_id }}
-          restore-keys: depscan-db-     # reuse yesterday's DB; refresh inside the run
+          restore-keys: depscan-db-
 
-      # ---- Stage 1 inputs: deterministic scanners (native, hybrid) ----
-      - name: Build once (test + package for SBOM)
-        run: mvn -q -e -DskipTests=false test package
-
-      - name: OWASP Dependency-Check (CVE scan)
-        run: >
-          mvn -q org.owasp:dependency-check-maven:check
-          -Dformat=JSON -DnvdApiKey=$NVD_API_KEY
-          -DautoUpdate=true -DoutputDirectory=target/depscan
-        env:
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-
-      - name: Generate SBOM (Syft)
+      # ============================================================
+      # 1) DETECTION FIRST — resilient: reads pom.xml, NO dependency
+      #    resolution, so an unresolvable/typosquatted coordinate is
+      #    catalogued and REPORTED instead of crashing the job.
+      # ============================================================
+      - name: Generate SBOM (Syft — static, from pom.xml)
         uses: anchore/sbom-action@v0
         with:
           path: .
@@ -77,15 +75,61 @@ jobs:
           output-file: target/sbom.cdx.json
 
       - name: Supply-chain scan (Grype)
+        id: grype
+        continue-on-error: true        # findings must never fail the job
         uses: anchore/scan-action@v4
         with:
           sbom: target/sbom.cdx.json
           output-format: json
-          fail-build: false          # the gate decides; never fail here
+          fail-build: false
           by-cve: true
 
-      # ---- Claude: scoring + remediation + gate reasoning (the agents) ----
+      - name: Upload detection report (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: depscan-report
+          path: |
+            target/sbom.cdx.json
+            ${{ steps.grype.outputs.json || 'results.json' }}
+          if-no-files-found: warn
+
+      # ============================================================
+      # 2) Resolution-dependent checks — allowed to fail soft so the
+      #    report above is never blocked. On a healthy repo they pass;
+      #    on the demo the typosquat makes them fail (expected) and the
+      #    remediation step fixes it.
+      # ============================================================
+      - name: OWASP Dependency-Check (CVE scan)
+        continue-on-error: true
+        run: >
+          mvn -q org.owasp:dependency-check-maven:check
+          -Dformat=JSON -DnvdApiKey=$NVD_API_KEY
+          -DautoUpdate=true -DoutputDirectory=target/depscan
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+
+      - name: Build + test (compile, surefire, package for SBOM)
+        continue-on-error: true
+        run: mvn -q -e -DskipTests=false test package
+
+      - name: Upload build + CVE reports (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: depscan-build-reports
+          path: |
+            target/depscan/**
+            target/surefire-reports/**
+          if-no-files-found: warn
+
+      # ============================================================
+      # 3) INTELLIGENCE — scoring + remediation + gate (the agents).
+      #    Runs only when ANTHROPIC_API_KEY is set AND not a fork PR
+      #    (fork PRs don't receive secrets on public repos).
+      # ============================================================
       - name: Depscan pipeline (Claude)
+        if: ${{ env.HAS_ANTHROPIC == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -94,13 +138,15 @@ jobs:
           prompt: |
             Run the dependency-supplychain orchestrator command:
               /depscan-pipeline . --mode ${{ github.event_name == 'pull_request' && 'gate-only' || (github.event.inputs.mode || 'full') }} ${{ github.event_name == 'pull_request' && format('--pr {0}', github.event.pull_request.number) || '' }}
-            Reuse the scanner reports already produced this run:
-              - target/depscan/dependency-check-report.json   (OWASP CVE)
+            Reuse the reports already produced this run:
               - target/sbom.cdx.json                          (Syft SBOM)
-              - the Grype JSON from the previous step          (supply-chain)
-            Use the `gh` CLI with GITHUB_TOKEN for all GitHub operations (open/update the consolidated
-            fix PR, post the PASS/BLOCK review, open tracking issues). Never merge — leave that to a
-            human reviewer. If no new fixable findings exist (no drift), exit without opening a PR.
+              - the Grype JSON from the Supply-chain step      (supply-chain)
+              - target/depscan/dependency-check-report.json   (OWASP CVE, if it resolved)
+            Read pom.xml directly to flag typosquatted / unresolvable coordinates (do not rely on a
+            successful build for detection). Use the `gh` CLI with GITHUB_TOKEN for all GitHub
+            operations (open/update the consolidated fix PR, post the PASS/BLOCK review, open
+            tracking issues). Never merge — leave that to a human reviewer. If there are no new
+            fixable findings (no drift), exit without opening a PR.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
