@@ -1,0 +1,57 @@
+{
+  "mcpServers": {
+    "git": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "uvx",
+        "mcp-server-git"
+      ],
+      "env": {}
+    },
+    "jira": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@aashari/mcp-server-atlassian-jira"
+      ],
+      "env": {
+        "ATLASSIAN_SITE_NAME": "sathiskumarperumaljava",
+        "ATLASSIAN_USER_EMAIL": "sathiskumarperumaljava@gmail.com",
+        "ATLASSIAN_API_TOKEN": "${ATLASSIAN_API_TOKEN}"
+      }
+    },
+    "github": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+      }
+    },
+    "sonarqube": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "sonarqube-mcp-server@latest"
+      ],
+      "env": {
+        "SONARQUBE_URL": "https://sonarcloud.io",
+        "SONARQUBE_TOKEN": "${SONARQUBE_TOKEN}",
+        "SONARQUBE_ORGANIZATION": "sathiskumarperumal"
+      }
+    }
+  }
+}

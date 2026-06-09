@@ -1,0 +1,9 @@
+{
+  "name": "dependency-supplychain-plugin",
+  "version": "1.0.0",
+  "description": "Dependency & Supply-Chain Hygiene for Java — scans Maven pom.xml and SBOMs for outdated, vulnerable, unlicensed and risky dependencies (OWASP Dependency-Check + Grype), scores each dependency by CVE severity and business criticality (NVD CVSS), auto-remediates with version-bump PRs, and gates PR merges on test + scan results with a full audit trail.",
+  "author": {
+    "name": "Sathis Kumar Perumal",
+    "email": "sathiskumar.perumal@ltts.com"
+  }
+}

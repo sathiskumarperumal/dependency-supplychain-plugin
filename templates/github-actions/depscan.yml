@@ -1,0 +1,106 @@
+# Dependency & Supply-Chain pipeline — GitHub Actions (Flavor B: Claude-in-Actions, hybrid)
+#
+# Drop this into a Java/Maven target repo at: .github/workflows/depscan.yml
+#
+# Triggers:
+#   • schedule (nightly)   -> mode "full": scan -> score -> remediate -> open/update fix PR -> gate
+#   • pull_request         -> mode "gate-only": run only the Stage 4 gate on the PR
+#   • workflow_dispatch    -> manual run (defaults to full)
+#
+# Hybrid design: the deterministic scanners run as native steps (fast, cacheable, free); Claude
+# does the *judgement* — risk scoring, consolidated remediation + PR authoring, and the gate verdict.
+#
+# Required repo secrets:  ANTHROPIC_API_KEY, NVD_API_KEY   (GITHUB_TOKEN is provided automatically)
+# Governance: this workflow NEVER merges. Enforce "require a human review before merge" with a
+# branch-protection rule on the default branch — that is the human-in-the-loop.
+
+name: depscan
+
+on:
+  schedule:
+    - cron: "0 2 * * *"          # 02:00 UTC nightly — drift detection
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "full | gate-only"
+        default: "full"
+
+permissions:
+  contents: write                 # push the fix branch
+  pull-requests: write            # open PR / post review
+  issues: write                   # MAJOR_REVIEW / BUILD_BROKEN tracking issues
+
+concurrency:                      # one run per ref; newer run cancels an in-flight one
+  group: depscan-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  depscan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      # ---- warm scanner DBs (the "persistent volume" becomes an Actions cache) ----
+      - name: Cache NVD + Grype databases
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository/org/owasp/dependency-check-data
+            ~/.cache/grype/db
+          key: depscan-db-${{ github.run_id }}
+          restore-keys: depscan-db-     # reuse yesterday's DB; refresh inside the run
+
+      # ---- Stage 1 inputs: deterministic scanners (native, hybrid) ----
+      - name: Build once (test + package for SBOM)
+        run: mvn -q -e -DskipTests=false test package
+
+      - name: OWASP Dependency-Check (CVE scan)
+        run: >
+          mvn -q org.owasp:dependency-check-maven:check
+          -Dformat=JSON -DnvdApiKey=$NVD_API_KEY
+          -DautoUpdate=true -DoutputDirectory=target/depscan
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+
+      - name: Generate SBOM (Syft)
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: target/sbom.cdx.json
+
+      - name: Supply-chain scan (Grype)
+        uses: anchore/scan-action@v4
+        with:
+          sbom: target/sbom.cdx.json
+          output-format: json
+          fail-build: false          # the gate decides; never fail here
+          by-cve: true
+
+      # ---- Claude: scoring + remediation + gate reasoning (the agents) ----
+      - name: Depscan pipeline (Claude)
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # The plugin (agents/skills/commands) must be available to Claude Code in the runner —
+          # install it from your marketplace or vendor it into the repo, then call the orchestrator.
+          prompt: |
+            Run the dependency-supplychain orchestrator command:
+              /depscan-pipeline . --mode ${{ github.event_name == 'pull_request' && 'gate-only' || (github.event.inputs.mode || 'full') }} ${{ github.event_name == 'pull_request' && format('--pr {0}', github.event.pull_request.number) || '' }}
+            Reuse the scanner reports already produced this run:
+              - target/depscan/dependency-check-report.json   (OWASP CVE)
+              - target/sbom.cdx.json                          (Syft SBOM)
+              - the Grype JSON from the previous step          (supply-chain)
+            Use the `gh` CLI with GITHUB_TOKEN for all GitHub operations (open/update the consolidated
+            fix PR, post the PASS/BLOCK review, open tracking issues). Never merge — leave that to a
+            human reviewer. If no new fixable findings exist (no drift), exit without opening a PR.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
