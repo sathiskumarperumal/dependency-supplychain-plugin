@@ -1,21 +1,28 @@
-# Dependency & Supply-Chain pipeline — GitHub Actions (Flavor B: Claude-in-Actions, hybrid)
+# Dependency & Supply-Chain pipeline — GitHub Actions (Flavor B: runs the PLUGIN)
 #
 # Drop this into a Java/Maven target repo at: .github/workflows/depscan.yml
 #
-# ORDER OF EXECUTION: detection/report FIRST (and resilient), then the resolution-dependent
-# checks, then the intelligence (scoring/remediation/gate). The report is produced and uploaded
-# even when the build can't resolve a dependency (e.g. a typosquatted/unresolvable coordinate) —
-# such a coordinate is a *finding to report*, not a reason to abort before reporting.
+# This workflow does NOT re-implement the pipeline as native steps. It installs Claude Code + the
+# depscan plugin into the runner and invokes the plugin's orchestrator, **/depscan-pipeline**, which
+# executes the entire flow itself:
+#   Stage 1 scan  ->  Stage 2 risk score  ->  Stage 3 auto-remediation (one PR)  ->  Stage 4 gate.
+# The steps below only PROVIDE THE TOOLCHAIN the plugin's skills call (Java, Maven, Syft, Grype, gh).
+# Detection is resilient by design: the plugin reads pom.xml statically, so an unresolvable /
+# typosquatted coordinate is reported as a finding — it does not crash the run.
 #
 # Triggers:
 #   • schedule (nightly)   -> mode "full": scan -> score -> remediate -> open/update fix PR -> gate
 #   • pull_request         -> mode "gate-only": run only the Stage 4 gate on the PR
 #   • workflow_dispatch    -> manual run (defaults to full)
 #
-# Required repo secrets:  ANTHROPIC_API_KEY (for the Claude step), NVD_API_KEY
-# (GITHUB_TOKEN is provided automatically.)
-# Governance: this workflow NEVER merges. Enforce "require a human review before merge" with a
-# branch-protection rule on the default branch — that is the human-in-the-loop.
+# Required repo secrets:
+#   ANTHROPIC_API_KEY   — drives Claude Code (the agents/skills)
+#   PLUGIN_REPO_TOKEN   — PAT with read access to the PRIVATE plugin repo (to check it out).
+#                         (If you make the plugin repo public, you can drop this and the token line.)
+#   NVD_API_KEY         — speeds up OWASP Dependency-Check's NVD sync
+#   (GITHUB_TOKEN is provided automatically; the plugin uses `gh` with it for PRs/reviews/issues.)
+#
+# Governance: this workflow NEVER merges. Require a human review via branch protection.
 
 name: depscan
 
@@ -30,9 +37,9 @@ on:
         default: "full"
 
 permissions:
-  contents: write                 # push the fix branch
-  pull-requests: write            # open PR / post review
-  issues: write                   # MAJOR_REVIEW / BUILD_BROKEN tracking issues
+  contents: write                 # plugin pushes the fix branch
+  pull-requests: write            # plugin opens the PR / posts the gate review
+  issues: write                   # plugin opens MAJOR_REVIEW / BUILD_BROKEN issues
 
 concurrency:
   group: depscan-${{ github.ref }}
@@ -41,112 +48,73 @@ concurrency:
 jobs:
   depscan:
     runs-on: ubuntu-latest
-    env:
-      # secrets cannot be used directly in `if:` — map presence to an env flag
-      HAS_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout target repo
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      - name: Checkout depscan plugin (private)
+        uses: actions/checkout@v4
+        with:
+          repository: sathiskumarperumal/dependency-supplychain-plugin
+          token: ${{ secrets.PLUGIN_REPO_TOKEN }}
+          path: .depscan-plugin
+
+      - name: Set up Java + Maven
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
           cache: maven
 
-      - name: Cache NVD + Grype databases
+      - name: Install scanners the plugin calls (Syft + Grype)
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh  | sh -s -- -b /usr/local/bin
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+          syft version && grype version
+
+      - name: Cache NVD database (warm OWASP Dependency-Check)
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.m2/repository/org/owasp/dependency-check-data
-            ~/.cache/grype/db
-          key: depscan-db-${{ github.run_id }}
-          restore-keys: depscan-db-
+          path: ~/.m2/repository/org/owasp/dependency-check-data
+          key: nvd-${{ github.run_id }}
+          restore-keys: nvd-
 
-      # ============================================================
-      # 1) DETECTION FIRST — resilient: reads pom.xml, NO dependency
-      #    resolution, so an unresolvable/typosquatted coordinate is
-      #    catalogued and REPORTED instead of crashing the job.
-      # ============================================================
-      - name: Generate SBOM (Syft — static, from pom.xml)
-        uses: anchore/sbom-action@v0
-        with:
-          path: .
-          format: cyclonedx-json
-          output-file: target/sbom.cdx.json
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
 
-      - name: Supply-chain scan (Grype)
-        id: grype
-        continue-on-error: true        # findings must never fail the job
-        uses: anchore/scan-action@v4
-        with:
-          sbom: target/sbom.cdx.json
-          output-format: json
-          fail-build: false
-          by-cve: true
+      - name: Load the plugin (project-scoped agents / skills / commands)
+        run: |
+          mkdir -p .claude
+          cp -r .depscan-plugin/commands .claude/commands
+          cp -r .depscan-plugin/agents   .claude/agents
+          cp -r .depscan-plugin/skills   .claude/skills
 
-      - name: Upload detection report (always)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: depscan-report
-          path: |
-            target/sbom.cdx.json
-            ${{ steps.grype.outputs.json || 'results.json' }}
-          if-no-files-found: warn
-
-      # ============================================================
-      # 2) Resolution-dependent checks — allowed to fail soft so the
-      #    report above is never blocked. On a healthy repo they pass;
-      #    on the demo the typosquat makes them fail (expected) and the
-      #    remediation step fixes it.
-      # ============================================================
-      - name: OWASP Dependency-Check (CVE scan)
-        continue-on-error: true
-        run: >
-          mvn -q org.owasp:dependency-check-maven:check
-          -Dformat=JSON -DnvdApiKey=$NVD_API_KEY
-          -DautoUpdate=true -DoutputDirectory=target/depscan
+      - name: Run the depscan pipeline (the plugin does everything)
         env:
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-
-      - name: Build + test (compile, surefire, package for SBOM)
-        continue-on-error: true
-        run: mvn -q -e -DskipTests=false test package
-
-      - name: Upload build + CVE reports (always)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: depscan-build-reports
-          path: |
-            target/depscan/**
-            target/surefire-reports/**
-          if-no-files-found: warn
-
-      # ============================================================
-      # 3) INTELLIGENCE — scoring + remediation + gate (the agents).
-      #    Runs only when ANTHROPIC_API_KEY is set AND not a fork PR
-      #    (fork PRs don't receive secrets on public repos).
-      # ============================================================
-      - name: Depscan pipeline (Claude)
-        if: ${{ env.HAS_ANTHROPIC == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
-        uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # The plugin (agents/skills/commands) must be available to Claude Code in the runner —
-          # install it from your marketplace or vendor it into the repo, then call the orchestrator.
-          prompt: |
-            Run the dependency-supplychain orchestrator command:
-              /depscan-pipeline . --mode ${{ github.event_name == 'pull_request' && 'gate-only' || (github.event.inputs.mode || 'full') }} ${{ github.event_name == 'pull_request' && format('--pr {0}', github.event.pull_request.number) || '' }}
-            Reuse the reports already produced this run:
-              - target/sbom.cdx.json                          (Syft SBOM)
-              - the Grype JSON from the Supply-chain step      (supply-chain)
-              - target/depscan/dependency-check-report.json   (OWASP CVE, if it resolved)
-            Read pom.xml directly to flag typosquatted / unresolvable coordinates (do not rely on a
-            successful build for detection). Use the `gh` CLI with GITHUB_TOKEN for all GitHub
-            operations (open/update the consolidated fix PR, post the PASS/BLOCK review, open
-            tracking issues). Never merge — leave that to a human reviewer. If there are no new
-            fixable findings (no drift), exit without opening a PR.
-        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}        # gh CLI auth (PRs / reviews / issues)
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+          MODE: ${{ github.event_name == 'pull_request' && 'gate-only' || (github.event.inputs.mode || 'full') }}
+          EVENT: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          PR_ARG=""
+          if [ "$EVENT" = "pull_request" ]; then PR_ARG="--pr $PR_NUMBER"; fi
+          echo "Running: /depscan-pipeline . --mode $MODE $PR_ARG"
+          # Headless, non-interactive: the orchestrator runs Stage 1->4 and uses gh for all GitHub ops.
+          claude -p "/depscan-pipeline . --mode $MODE $PR_ARG" \
+            --dangerously-skip-permissions \
+            --output-format text
+
+      - name: Upload pipeline reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: depscan-reports
+          path: |
+            depscan-report.json
+            depscan-risk-report.json
+            depscan-supplychain-audit.json
+            target/sbom.cdx.json
+          if-no-files-found: warn
