@@ -1,40 +1,25 @@
 #!/usr/bin/env bash
-# One-time bootstrap for the Dependency & Supply-Chain plugin on macOS / Linux.
+# Docker-free bootstrap for the Dependency & Supply-Chain plugin (macOS / Linux / CI).
 #
-# Makes the plugin portable: instead of installing Grype / Syft / OWASP Dependency-Check
-# natively, it installs thin Docker wrappers on PATH and pre-pulls the scanner images.
-# After this runs, the only host prerequisite for scanning is Docker.
+# Installs NATIVE Syft + Grype binaries on PATH. OWASP Dependency-Check needs no install — it runs
+# via the Maven plugin (mvn org.owasp:dependency-check-maven:check). Java 17+ and Maven must already
+# be present. No Docker, no image pulls, no daemon.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BIN_DIR="${DEPSCAN_BIN:-$HOME/.depscan/bin}"
-
-echo "== Dependency & Supply-Chain plugin - setup =="
-
-# 1. Docker present and running?
-command -v docker >/dev/null 2>&1 || { echo "ERROR: Docker not found on PATH. Install Docker and re-run."; exit 1; }
-docker info >/dev/null 2>&1 || { echo "ERROR: Docker daemon not running. Start Docker and re-run."; exit 1; }
-echo "Docker OK"
-
-# 2. Pre-pull scanner images
-for img in anchore/grype:latest anchore/syft:latest owasp/dependency-check:latest; do
-    echo "Pulling $img ..."
-    docker pull "$img" >/dev/null
-done
-echo "Images ready"
-
-# 3. Create DB cache volumes
-for vol in depscan-grype-db depscan-dc-data; do
-    docker volume create "$vol" >/dev/null
-done
-
-# 4. Install wrappers on PATH (extensionless so `grype`/`syft`/`dependency-check` resolve)
+BIN_DIR="${DEPSCAN_BIN:-$HOME/.local/bin}"
 mkdir -p "$BIN_DIR"
-for tool in grype syft dependency-check; do
-    cp "$SCRIPT_DIR/$tool.sh" "$BIN_DIR/$tool"
-    chmod +x "$BIN_DIR/$tool"
-done
-echo "Wrappers installed to $BIN_DIR"
+
+echo "== Dependency & Supply-Chain plugin - native setup (no Docker) =="
+
+# Prerequisite checks (advisory — install these via your OS package manager / SDK)
+command -v java >/dev/null 2>&1 || echo "WARN: Java not found — install a JDK 17+."
+command -v mvn  >/dev/null 2>&1 || echo "WARN: Maven not found — install Maven (or use ./mvnw)."
+
+# Install Syft + Grype natively into $BIN_DIR
+echo "Installing Syft  -> $BIN_DIR"
+curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh  | sh -s -- -b "$BIN_DIR"
+echo "Installing Grype -> $BIN_DIR"
+curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b "$BIN_DIR"
 
 case ":$PATH:" in
     *":$BIN_DIR:"*) echo "$BIN_DIR already on PATH" ;;
@@ -42,7 +27,7 @@ case ":$PATH:" in
 esac
 
 echo
-echo "Setup complete. Next:"
-echo "  1. Export the MCP token env vars: GITHUB_PERSONAL_ACCESS_TOKEN, ATLASSIAN_API_TOKEN, SONARQUBE_TOKEN"
-echo "     (optional: NVD_API_KEY to speed up OWASP Dependency-Check)"
-echo "  2. Restart your shell, then run /depscan-doctor to verify."
+echo "Setup complete (no Docker)."
+echo "  • Verify with: /depscan-doctor"
+echo "  • Optional: export NVD_API_KEY to speed up OWASP Dependency-Check."
+echo "  • Local Claude Code use also needs the MCP token vars (GITHUB_PERSONAL_ACCESS_TOKEN, ATLASSIAN_API_TOKEN)."

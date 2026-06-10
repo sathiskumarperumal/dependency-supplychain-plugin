@@ -1,20 +1,14 @@
 <#
 .SYNOPSIS
-    One-time bootstrap for the Dependency & Supply-Chain plugin on a Windows machine.
+    Docker-free bootstrap for the Dependency & Supply-Chain plugin on Windows.
 
 .DESCRIPTION
-    Makes the plugin portable: instead of installing Grype / Syft / OWASP Dependency-Check
-    natively, it installs thin Docker wrappers on PATH and pre-pulls the scanner images.
-    After this runs, the only host prerequisite for scanning is Docker.
-
-    Steps:
-      1. Verify Docker is installed and the daemon is running.
-      2. Pre-pull anchore/grype, anchore/syft, owasp/dependency-check.
-      3. Create named volumes that cache the vulnerability DBs across runs.
-      4. Copy the *.cmd wrappers to a bin dir and add it to the user PATH.
+    Installs NATIVE Syft + Grype binaries on PATH (downloaded from the anchore GitHub releases).
+    OWASP Dependency-Check needs no install — it runs via the Maven plugin. Java 17+ and Maven must
+    already be present. No Docker, no images, no daemon.
 
 .PARAMETER BinDir
-    Where the wrappers are installed. Default: %USERPROFILE%\.depscan\bin
+    Where the binaries are installed. Default: %USERPROFILE%\.depscan\bin
 #>
 [CmdletBinding()]
 param(
@@ -22,35 +16,30 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-
-Write-Host "== Dependency & Supply-Chain plugin - setup ==" -ForegroundColor Cyan
-
-# 1. Docker present and running? --------------------------------------------
-try { docker --version | Out-Null }
-catch { throw "Docker not found on PATH. Install Docker Desktop, then re-run this script." }
-try { docker info 2>$null | Out-Null }
-catch { throw "Docker is installed but the daemon is not running. Start Docker Desktop and re-run." }
-Write-Host "Docker OK" -ForegroundColor Green
-
-# 2. Pre-pull scanner images ------------------------------------------------
-$images = @('anchore/grype:latest', 'anchore/syft:latest', 'owasp/dependency-check:latest')
-foreach ($img in $images) {
-    Write-Host "Pulling $img ..." -ForegroundColor DarkGray
-    docker pull $img | Out-Null
-}
-Write-Host "Images ready" -ForegroundColor Green
-
-# 3. Create DB cache volumes ------------------------------------------------
-foreach ($vol in @('depscan-grype-db', 'depscan-dc-data')) {
-    docker volume create $vol | Out-Null
-}
-
-# 4. Install wrappers on PATH -----------------------------------------------
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
-Copy-Item (Join-Path $ScriptDir '*.cmd') -Destination $BinDir -Force
-Write-Host "Wrappers installed to $BinDir" -ForegroundColor Green
 
+Write-Host "== Dependency & Supply-Chain plugin - native setup (no Docker) ==" -ForegroundColor Cyan
+
+function Install-AnchoreTool([string]$Name) {
+    $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/anchore/$Name/releases/latest" -Headers @{ 'User-Agent' = 'depscan-setup' }
+    $asset = $rel.assets | Where-Object { $_.name -match '_windows_amd64\.zip$' } | Select-Object -First 1
+    if (-not $asset) { throw "No Windows asset found for $Name" }
+    $zip = Join-Path $env:TEMP $asset.name
+    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip -Headers @{ 'User-Agent' = 'depscan-setup' }
+    Expand-Archive -Path $zip -DestinationPath $BinDir -Force
+    Remove-Item $zip -Force
+    Write-Host "$Name installed -> $BinDir" -ForegroundColor Green
+}
+
+Install-AnchoreTool 'syft'
+Install-AnchoreTool 'grype'
+
+# Prerequisite checks (advisory)
+if (-not (Get-Command java -ErrorAction SilentlyContinue)) { Write-Warning "Java not found — install a JDK 17+." }
+if (-not (Get-Command mvn  -ErrorAction SilentlyContinue)) { Write-Warning "Maven not found — install Maven (or use .\mvnw)." }
+
+# Add BinDir to user PATH
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if ($userPath -notlike "*$BinDir*") {
     [Environment]::SetEnvironmentVariable('Path', "$userPath;$BinDir", 'User')
@@ -59,9 +48,7 @@ if ($userPath -notlike "*$BinDir*") {
     Write-Host "$BinDir already on user PATH." -ForegroundColor DarkGray
 }
 
-Write-Host "`nSetup complete." -ForegroundColor Cyan
-Write-Host "Next:" -ForegroundColor Cyan
-Write-Host "  1. Set the MCP token env vars (User scope), e.g.:" -ForegroundColor Gray
-Write-Host '     [Environment]::SetEnvironmentVariable("GITHUB_PERSONAL_ACCESS_TOKEN","<pat>","User")' -ForegroundColor DarkGray
-Write-Host "     (also ATLASSIAN_API_TOKEN, SONARQUBE_TOKEN; optional NVD_API_KEY)" -ForegroundColor DarkGray
-Write-Host "  2. Restart your shell, then run /depscan-doctor to verify." -ForegroundColor Gray
+Write-Host "`nSetup complete (no Docker)." -ForegroundColor Cyan
+Write-Host "  - Verify with: /depscan-doctor" -ForegroundColor Gray
+Write-Host "  - Optional: set NVD_API_KEY to speed up OWASP Dependency-Check." -ForegroundColor DarkGray
+Write-Host "  - Local Claude Code use also needs MCP token vars (GITHUB_PERSONAL_ACCESS_TOKEN, ATLASSIAN_API_TOKEN)." -ForegroundColor DarkGray

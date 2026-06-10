@@ -43,8 +43,8 @@ Built from the **7-Day Dependency & Supply-Chain Hygiene Plan** (`Claude_Initiat
 | **GitHub** (MCP) | Stage 3, 4, 5 | PR creation, reviews, merge. |
 | **Jira** (MCP) | Stage 2, 5 | Ticket linkage & audit comments. |
 
-The scanners can run **natively** (installed on `PATH`) or **via Docker** — the latter is the
-portable, recommended path: the only host prerequisite becomes Docker. See *Install on a new
+The scanners run as **native binaries** on `PATH` (Syft + Grype); OWASP Dependency-Check runs
+via the Maven plugin. **No Docker is required.** See *Install on a new
 machine* below.
 
 ---
@@ -52,12 +52,12 @@ machine* below.
 ## Install on a new machine
 
 The plugin itself is just text (agents/skills/commands) — it cannot bundle native binaries, so each
-machine that runs a scan needs a toolchain. The portable setup keeps that to **Docker + Java + Maven**:
+machine that runs a scan needs a small **native** toolchain — **Java + Maven** (no Docker):
 
-1. **Install** Claude Code, **Docker Desktop**, a JDK 17+, and Maven.
+1. **Install** Claude Code, a **JDK 17+**, and **Maven** (no Docker required anywhere).
 2. **Add the plugin** (from your marketplace or a local path).
-3. **Bootstrap the scanners** (one time per machine) — pulls the scanner images and installs Docker
-   wrappers for `grype` / `syft` / `dependency-check` onto your `PATH`:
+3. **Install the scanners** (one time per machine) — installs **native** Syft + Grype
+   binaries onto your `PATH` (no Docker, no images, no daemon):
 
    ```powershell
    # Windows
@@ -85,12 +85,12 @@ machine that runs a scan needs a toolchain. The portable setup keeps that to **D
    /depscan-doctor
    ```
 
-   It checks Docker, the scanner wrappers + images, Maven/Java, and the MCP servers, and reports
+   It checks Java/Maven and the native Syft/Grype binaries (no Docker), plus the MCP servers, and reports
    exactly what (if anything) is missing.
 
-> The Stage 1 OWASP scan runs primarily via the Maven plugin (`mvn org.owasp:dependency-check-maven:check`,
-> no install needed); the `dependency-check` Docker wrapper is a direct-CLI fallback. Grype and Syft
-> always run through their Docker wrappers in the portable setup.
+> **No Docker anywhere:** Syft + Grype are native binaries; OWASP Dependency-Check runs via the Maven
+> plugin (`mvn org.owasp:dependency-check-maven:check`). The GitHub Actions workflow installs the same
+> native tools, so local and CI match — no Docker required.
 
 ---
 
