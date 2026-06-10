@@ -117,7 +117,12 @@ clean.
 
 ---
 
-## Step 6 — Raise ONE consolidated PR (GitHub MCP)
+## Step 6 — Raise ONE consolidated PR/MR (provider adapter)
+
+> **Any Git host.** Open the change via the provider matching `origin`: **GitHub** → `gh` /
+> `mcp__github__create_pull_request`; **GitLab** → `glab mr create` / GitLab MR API; **Bitbucket** →
+> REST; **unknown** → push the branch and print "open an MR at `<compare-url>`" (no hard fail). The
+> body template below applies to a PR or an MR.
 
 Commit each fix as its own commit on the single branch (granular history, easy per-fix review),
 then push once:

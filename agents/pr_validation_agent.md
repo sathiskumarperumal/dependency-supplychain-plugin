@@ -104,6 +104,12 @@ MERGE only if all three checks PASS — otherwise BLOCK.
 > **Human-in-the-loop:** this agent never merges automatically. A passing gate produces an
 > approval-ready report for a human reviewer; the human performs the merge.
 
+> **Any Git host (provider adapter).** Post the verdict via the provider matching `origin`:
+> **GitHub** → PR review (`COMMENT` / `REQUEST_CHANGES`) via `gh` / GitHub MCP; **GitLab** → an MR
+> note (`glab` / API); **Bitbucket** → PR comment; **unknown** → write `depscan-verdict.md` and print
+> the PR/MR URL. The PASS/BLOCK content and the no-auto-merge rule are identical across hosts; the
+> "PR" wording below maps to a GitLab "MR".
+
 ### If PASS (gate cleared — ready for human review)
 1. Post the **PASS evidence** block as a PR review via `mcp__github__create_pull_request_review`
    with event **`COMMENT`** (not `APPROVE`), stating "Gate PASSED — ready for human review and

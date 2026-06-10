@@ -124,6 +124,23 @@ native steps. The human merge is preserved via branch protection — the workflo
 Both triggers call the single entry point — the **`/depscan-pipeline`** command — so the sequence is
 defined once, not re-encoded per trigger.
 
+### Works with any Git host
+
+`/depscan-pipeline` accepts a repo from **any** Git source (GitHub, GitLab, Bitbucket, self-hosted).
+Clone, scan, risk-score, remediate, push, and the PDF reports are all host-agnostic (plain `git` +
+Maven + scanners). Only **publishing** is provider-specific and goes through an adapter:
+
+| Operation | GitHub | GitLab | Bitbucket | unknown / generic |
+|---|---|---|---|---|
+| Open PR/MR | `gh` / MCP | `glab` / MR API | REST | push branch + print "open MR here" |
+| Gate verdict | PR review | MR note | PR comment | `depscan-verdict.md` |
+| Token (env/secret) | `GITHUB_TOKEN` | `GITLAB_TOKEN` (+ `CI_SERVER_URL`) | `BITBUCKET_TOKEN` | — |
+
+Unknown hosts never hard-fail: the pipeline still scans, scores, remediates, pushes the fix branch,
+and writes the reports + verdict, then prints the manual merge-request link. GitHub is fully wired;
+GitLab/Bitbucket use their CLI/REST. (Running the automation *inside* GitLab CI needs a small
+`.gitlab-ci.yml` equivalent of `depscan.yml` — ask if you want it.)
+
 **Setup (in the target Java/Maven repo):**
 
 1. Copy [`templates/github-actions/depscan.yml`](templates/github-actions/depscan.yml) to
