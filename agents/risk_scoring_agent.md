@@ -164,3 +164,12 @@ recommendation. State that `depscan-risk-report.json` is ready for the **Auto-Re
 (Stage 3) and the **PR Validation Agent** (Stage 4).
 
 If a Jira ticket id is supplied, post the top findings as a comment via the Jira MCP tools.
+
+## Professional PDF (for humans / PR review)
+Also emit a human-readable **`Risk-Scoring-Report.md`** (title block + ranked backlog table with
+risk-band badges + priorities) and render it to **`depscan-reports/Risk-Scoring-Report.pdf`** with
+the shared stylesheet — see `templates/report/RENDER.md`:
+```bash
+npx --yes md-to-pdf --stylesheet templates/report/report.css \
+  --pdf-options '{"format":"A4","margin":"18mm","printBackground":true}' Risk-Scoring-Report.md
+```

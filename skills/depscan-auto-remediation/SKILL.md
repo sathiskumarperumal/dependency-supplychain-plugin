@@ -166,6 +166,10 @@ vulnerable to clean; unsafe items are tracked separately (see below).
 Infer `owner`/`repo` from `git remote get-url origin`. Base branch is the repo default unless told
 otherwise.
 
+> **Reports for the reviewer:** stage the **`depscan-reports/`** folder (the CVE / Risk-Scoring /
+> Audit-Trail PDFs + their `.md` sources) onto this same fix branch so they ride in the consolidated
+> PR and the PR-validator can review them. `git add -A` already includes it.
+
 ---
 
 ## Output

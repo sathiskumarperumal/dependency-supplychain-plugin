@@ -79,6 +79,12 @@ jobs:
           key: nvd-${{ github.run_id }}
           restore-keys: nvd-
 
+      - name: Cache Chromium for PDF rendering (md-to-pdf / puppeteer)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/puppeteer
+          key: puppeteer-${{ runner.os }}
+
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code
 
@@ -127,4 +133,5 @@ jobs:
             depscan-risk-report.json
             depscan-supplychain-audit.json
             target/sbom.cdx.json
+            depscan-reports/**
           if-no-files-found: warn

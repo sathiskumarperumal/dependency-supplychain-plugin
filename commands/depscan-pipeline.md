@@ -69,7 +69,13 @@ for the PR that triggered it.
 - **Never drop work silently.** `MAJOR_REVIEW`, `BUILD_BROKEN`, and `INEFFECTIVE` items are raised as
   tracking issues, not folded into the PR.
 
+## Reports (professional PDFs)
+Each run renders human-readable PDFs into **`depscan-reports/`** (CVE-Report, Risk-Scoring-Report,
+Audit-Trail-Report) via `md-to-pdf` + the shared stylesheet (`templates/report/report.css`). In
+`full` mode they are committed onto the fix branch so the PR reviewer can read them; see each
+report skill and `templates/report/RENDER.md`.
+
 ## Final output
 Report: mode, target/PR, per-stage outcome (scan counts → risk bands → remediation PR link → gate
-verdict), and the ordered human follow-ups. In `full` mode with no new findings, report
-"no drift detected".
+verdict), the `depscan-reports/` PDF paths, and the ordered human follow-ups. In `full` mode with no
+new findings, report "no drift detected".

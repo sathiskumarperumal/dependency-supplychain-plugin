@@ -1,0 +1,99 @@
+/* Dependency & Supply-Chain — professional report stylesheet
+   Used by md-to-pdf to render CVE / Risk / Audit-Trail Markdown into polished PDFs.
+   Conversion:
+     npx --yes md-to-pdf --stylesheet templates/report/report.css \
+       --pdf-options '{"format":"A4","margin":"18mm","printBackground":true}' <report>.md
+*/
+
+:root {
+  --brand:        #1f3864;
+  --brand-2:      #2e74b5;
+  --ink:          #1c2530;
+  --muted:        #5b6770;
+  --line:         #d9dee3;
+  --crit:         #b00020;
+  --high:         #d9534f;
+  --med:          #e0a800;
+  --low:          #6c757d;
+  --ok:           #2e7d32;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--ink);
+  font-size: 11.5px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ---- Title block (first heading + the metadata line under it) ---- */
+h1 {
+  color: #fff;
+  background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
+  margin: -4mm -6mm 6mm -6mm;        /* bleed to the page margins */
+  padding: 16mm 6mm 10mm 6mm;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: .2px;
+}
+/* the first paragraph right after H1 = the meta line (project | generated | scope) */
+h1 + p {
+  color: var(--muted);
+  margin-top: -3mm;
+  font-size: 11px;
+  border-bottom: 2px solid var(--line);
+  padding-bottom: 6px;
+}
+
+h2 {
+  color: var(--brand);
+  font-size: 16px;
+  margin: 18px 0 6px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--line);
+}
+h3 { color: var(--brand-2); font-size: 13px; margin: 14px 0 4px; }
+
+p, li { font-size: 11.5px; }
+code {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  background: #f4f6f8; padding: 1px 4px; border-radius: 3px; font-size: 10.5px;
+}
+
+/* ---- Tables ---- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0 14px;
+  font-size: 10.5px;
+}
+thead th {
+  background: var(--brand);
+  color: #fff;
+  text-align: left;
+  padding: 6px 8px;
+  font-weight: 600;
+}
+tbody td { padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tbody tr:nth-child(even) { background: #f7f9fb; }
+
+/* ---- Severity / status badges: write as `CRITICAL` etc. in the Markdown ---- */
+code:is(:contains("CRITICAL")) { } /* fallback; explicit classes below via inline spans */
+.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; color: #fff; font-size: 9.5px; font-weight: 700; }
+.crit { background: var(--crit); }
+.high { background: var(--high); }
+.med  { background: var(--med); color:#1c2530; }
+.low  { background: var(--low); }
+.ok   { background: var(--ok); }
+
+/* blockquote = callout */
+blockquote {
+  margin: 10px 0; padding: 8px 12px;
+  background: #fff8e1; border-left: 4px solid var(--med); color: #5b4a00;
+}
+
+hr { border: none; border-top: 1px solid var(--line); margin: 14px 0; }
+
+/* footer with page numbers is supplied via md-to-pdf --pdf-options footerTemplate */

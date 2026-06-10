@@ -113,6 +113,12 @@ PATH, MCP credentials valid, demo repo at known commit) so the demo is repeatabl
 ## Output
 
 - `dependency-health-report.md` (+ optional HTML)
+- **`depscan-reports/Audit-Trail-Report.pdf`** — the professional PDF: render the health report with
+  the shared stylesheet (see `templates/report/RENDER.md`):
+  ```bash
+  npx --yes md-to-pdf --stylesheet templates/report/report.css \
+    --pdf-options '{"format":"A4","margin":"18mm","printBackground":true}' Audit-Trail-Report.md
+  ```
 - Health score, grade, and trend
 - The verified demo script with pre-flight checklist
 - A one-paragraph "state of supply-chain hygiene" suitable for a stakeholder update

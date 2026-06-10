@@ -157,6 +157,14 @@ Stage 5  depscan-audit-trail          → dependency-health-report.md
 The **supply-chain audit** is not a standalone stage — it runs as a component **inside the Stage 4
 gate** (alongside tests and the CVE scan). Stage 5 is reporting, outside the gate.
 
+### Professional PDF reports
+
+Every run also renders human-readable **PDFs** into a `depscan-reports/` folder — **CVE-Report**
+(Stage 1), **Risk-Scoring-Report** (Stage 2), and **Audit-Trail-Report** (Stage 5) — from Markdown +
+a shared stylesheet (`templates/report/report.css`) via `md-to-pdf` (headless Chromium; works
+locally and in CI). In `full` runs they're committed onto the fix branch for PR review. See
+`templates/report/RENDER.md`.
+
 ### Execution context (single repo input)
 
 The repo/head is supplied **once**, to the entry agent (**Stage 2 `risk_scoring_agent`**), which

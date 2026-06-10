@@ -192,3 +192,13 @@ Report to the user:
 - Path to `depscan-report.json`
 
 Hand `depscan-report.json` to the **Risk Scoring Agent** (Stage 2) for prioritization.
+
+### Professional PDF (for humans / PR review)
+Also emit a human-readable **`CVE-Report.md`** (title block + summary counts + CVE table with
+severity badges + supply-chain alerts) and render it to **`depscan-reports/CVE-Report.pdf`** using
+the shared stylesheet — see `templates/report/RENDER.md`:
+```bash
+npx --yes md-to-pdf --stylesheet templates/report/report.css \
+  --pdf-options '{"format":"A4","margin":"18mm","printBackground":true}' CVE-Report.md
+```
+Keep the `.json` (machines), `.md` (diffs) and `.pdf` (humans) together under `depscan-reports/`.
