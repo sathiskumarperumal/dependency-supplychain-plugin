@@ -6,9 +6,9 @@
 # depscan plugin into the runner and invokes the plugin's orchestrator, **/depscan-pipeline**, which
 # executes the entire flow itself:
 #   Stage 1 scan  ->  Stage 2 risk score  ->  Stage 3 auto-remediation (one PR)  ->  Stage 4 gate.
-# The steps below only PROVIDE THE TOOLCHAIN the plugin's skills call (Java, Maven, Syft, Grype, gh).
-# Detection is resilient by design: the plugin reads pom.xml statically, so an unresolvable /
-# typosquatted coordinate is reported as a finding — it does not crash the run.
+# The steps below only PROVIDE THE TOOLCHAIN the plugin needs (Java, Maven, Syft, Grype) and the
+# Linux MCP servers (github + jira) the agents call. Detection is resilient by design: the plugin
+# reads pom.xml statically, so an unresolvable / typosquatted coordinate is reported, not fatal.
 #
 # Triggers:
 #   • schedule (nightly)   -> mode "full": scan -> score -> remediate -> open/update fix PR -> gate
@@ -18,9 +18,11 @@
 # Required repo secrets:
 #   ANTHROPIC_API_KEY   — drives Claude Code (the agents/skills)
 #   PLUGIN_REPO_TOKEN   — PAT with read access to the PRIVATE plugin repo (to check it out).
-#                         (If you make the plugin repo public, you can drop this and the token line.)
+#                         (If you make the plugin repo public, drop this and the token line below.)
 #   NVD_API_KEY         — speeds up OWASP Dependency-Check's NVD sync
-#   (GITHUB_TOKEN is provided automatically; the plugin uses `gh` with it for PRs/reviews/issues.)
+#   ATLASSIAN_API_TOKEN — Jira API token (only if you want Jira audit comments; else the jira MCP
+#                         simply has no creds and Jira steps are skipped)
+#   (GITHUB_TOKEN is provided automatically and feeds the github MCP server for PRs/reviews/issues.)
 #
 # Governance: this workflow NEVER merges. Require a human review via branch protection.
 
@@ -89,11 +91,19 @@ jobs:
           cp -r .depscan-plugin/agents   .claude/agents
           cp -r .depscan-plugin/skills   .claude/skills
 
+      - name: Configure MCP servers for CI (Linux: github + jira)
+        # The plugin's own .mcp.json is Windows-only (cmd /c ...). This Linux CI variant runs the
+        # github + jira MCP servers via npx so the agents' mcp__github__* / mcp__jira__* tools resolve.
+        run: cp .depscan-plugin/templates/github-actions/mcp.ci.json ./.mcp.json
+
       - name: Run the depscan pipeline (the plugin does everything)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}        # gh CLI auth (PRs / reviews / issues)
+          # github MCP server auth (uses the auto GITHUB_TOKEN; swap to a PAT secret for cross-repo)
+          GITHUB_PERSONAL_ACCESS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # jira MCP server auth (optional — omit if you don't use Jira)
+          ATLASSIAN_API_TOKEN: ${{ secrets.ATLASSIAN_API_TOKEN }}
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
           MODE: ${{ github.event_name == 'pull_request' && 'gate-only' || (github.event.inputs.mode || 'full') }}
           EVENT: ${{ github.event_name }}
@@ -102,8 +112,10 @@ jobs:
           PR_ARG=""
           if [ "$EVENT" = "pull_request" ]; then PR_ARG="--pr $PR_NUMBER"; fi
           echo "Running: /depscan-pipeline . --mode $MODE $PR_ARG"
-          # Headless, non-interactive: the orchestrator runs Stage 1->4 and uses gh for all GitHub ops.
+          # Headless, non-interactive: --mcp-config loads the github+jira servers; the orchestrator
+          # runs Stage 1->4 and uses the MCP tools for all GitHub/Jira operations.
           claude -p "/depscan-pipeline . --mode $MODE $PR_ARG" \
+            --mcp-config ./.mcp.json \
             --dangerously-skip-permissions \
             --output-format text
 
