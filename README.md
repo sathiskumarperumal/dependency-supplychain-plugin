@@ -128,14 +128,13 @@ defined once, not re-encoded per trigger.
 
 1. Copy [`templates/github-actions/depscan.yml`](templates/github-actions/depscan.yml) to
    `.github/workflows/depscan.yml`.
-2. Add repo secrets: `ANTHROPIC_API_KEY`, `NVD_API_KEY` (`GITHUB_TOKEN` is automatic).
-3. Make the plugin available to Claude Code in the runner (install from your marketplace, or vendor
-   it), so `/depscan-pipeline` resolves.
+2. Add repo secrets: `ANTHROPIC_API_KEY`, `NVD_API_KEY`, and (optional, for Jira) `ATLASSIAN_API_TOKEN`. `GITHUB_TOKEN` is automatic.
+3. No plugin token needed — the plugin repo is **public**, so the workflow checks it out directly.
 4. Add a **branch-protection rule** requiring a human review before merge — this is the
    human-in-the-loop; the workflow only posts PASS/BLOCK.
 
-> **Headless note:** in CI the interactive `github`/`jira` MCP servers are usually absent — the
-> orchestrator uses the `gh` CLI / REST with `GITHUB_TOKEN` for all GitHub/Jira operations instead.
+> **MCP in CI:** the workflow loads templates/github-actions/mcp.ci.json via --mcp-config, running the
+> github + jira MCP servers so the agents MCP tools resolve; creds come from the Actions secrets above.
 
 ---
 

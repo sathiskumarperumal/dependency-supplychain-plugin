@@ -17,13 +17,12 @@
 #
 # Required repo secrets:
 #   ANTHROPIC_API_KEY   — drives Claude Code (the agents/skills)
-#   PLUGIN_REPO_TOKEN   — PAT with read access to the PRIVATE plugin repo (to check it out).
-#                         (If you make the plugin repo public, drop this and the token line below.)
 #   NVD_API_KEY         — speeds up OWASP Dependency-Check's NVD sync
 #   ATLASSIAN_API_TOKEN — Jira API token (only if you want Jira audit comments; else the jira MCP
 #                         simply has no creds and Jira steps are skipped)
 #   (GITHUB_TOKEN is provided automatically and feeds the github MCP server for PRs/reviews/issues.)
 #
+# The plugin repo is PUBLIC, so no token is needed to check it out.
 # Governance: this workflow NEVER merges. Require a human review via branch protection.
 
 name: depscan
@@ -54,11 +53,10 @@ jobs:
       - name: Checkout target repo
         uses: actions/checkout@v4
 
-      - name: Checkout depscan plugin (private)
+      - name: Checkout depscan plugin (public)
         uses: actions/checkout@v4
         with:
           repository: sathiskumarperumal/dependency-supplychain-plugin
-          token: ${{ secrets.PLUGIN_REPO_TOKEN }}
           path: .depscan-plugin
 
       - name: Set up Java + Maven
