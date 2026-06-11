@@ -46,15 +46,20 @@ candidate — route it to human follow-up instead.
 
 ---
 
-## Step 2 — One consolidated remediation branch
+## Step 2 — One consolidated remediation branch (new + versioned per run)
 
-Create a **single** branch off the repo default for the entire batch:
+Create a **single, brand-new versioned branch** off the repo default for the entire batch. Use the
+caller-supplied name if present, otherwise derive a UTC-timestamped one — so every run gets a unique
+branch and never reuses/collides with a previous run's branch:
 
 ```bash
-git checkout -b fix/depscan-auto-remediation
+BRANCH="${DEPSCAN_FIX_BRANCH:-fix/depscan-$(date -u +%Y%m%d-%H%M%S)}"
+git fetch origin
+git checkout -b "$BRANCH" origin/HEAD   # branch off the current default-branch tip
 ```
 
-All fixes in this run land on this one branch. Do **not** create a branch per dependency.
+All fixes in this run land on this one branch (reuse `$BRANCH` for the push and the PR below). Do
+**not** create a branch per dependency, and do **not** reuse a static/shared branch name.
 
 ---
 
@@ -131,7 +136,7 @@ then push once:
 git add -A
 git commit -m "fix(deps): bump <artifactId> <old> -> <new> (resolves <CVE>)"   # one per fix
 # ...repeat per fix (and a "remove typosquat" commit for removals)...
-git push -u origin fix/depscan-auto-remediation
+git push -u origin "$BRANCH"
 ```
 
 Open a **single** PR with `mcp__github__create_pull_request` using this consolidated body template:

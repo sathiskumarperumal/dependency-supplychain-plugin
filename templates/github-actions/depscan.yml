@@ -129,6 +129,9 @@ jobs:
           fi
           PR_ARG=""
           if [ "$EVENT" = "pull_request" ]; then PR_ARG="--pr $PR_NUMBER"; fi
+          # New versioned fix branch per run (full mode) — unique, host-agnostic, no stale-branch reuse.
+          export DEPSCAN_FIX_BRANCH="fix/depscan-$(date -u +%Y%m%d-%H%M%S)"
+          echo "Fix branch for this run: $DEPSCAN_FIX_BRANCH"
           echo "Running: /depscan-pipeline . --mode $MODE $PR_ARG"
           # Headless, non-interactive: --mcp-config loads the github+jira servers; the orchestrator
           # runs Stage 1->4 and uses the MCP tools for all GitHub/Jira operations.

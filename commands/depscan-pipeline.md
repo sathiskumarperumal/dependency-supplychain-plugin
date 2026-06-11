@@ -69,9 +69,13 @@ Run the stages in order, stopping at the human-merge boundary:
    > Stage-4 `depscan-supplychain-audit.json` + `target/sbom.cdx.json`) MUST exist at the repo root
    > at the end of the run so CI can upload them as artifacts.
 3. **Stage 3 — Auto-remediation.** Apply `skills/depscan-auto-remediation/SKILL.md`: batch all safe
-   fixes onto the single branch `fix/depscan-auto-remediation`, build once (`mvn -q test package`),
-   re-scan to confirm CVEs cleared, and open/update **one consolidated PR/MR via the publishing
-   adapter** (GitHub PR · GitLab MR · else push + manual-MR link).
+   fixes onto a **new versioned branch** for this run, build once (`mvn -q test package`), re-scan to
+   confirm CVEs cleared, and open **one consolidated PR/MR via the publishing adapter** (GitHub PR ·
+   GitLab MR · else push + manual-MR link).
+   - **New branch every run.** Name it `${DEPSCAN_FIX_BRANCH}` if the caller set it, otherwise
+     `fix/depscan-$(date -u +%Y%m%d-%H%M%S)`. Create it fresh off the default-branch tip — never
+     reuse a static/shared branch, so each run is isolated and always yields a clean PR. Capture the
+     name once and reuse it for the push and the PR.
    > **On GitHub you MUST actually open the PR — do not stop at a compare URL.** A token is present
    > (`GITHUB_TOKEN` feeds the github MCP in CI), so call `mcp__github__create_pull_request`
    > directly; if that errors, fall back to `gh pr create` (preinstalled on GitHub runners). Only
@@ -79,22 +83,18 @@ Run the stages in order, stopping at the human-merge boundary:
    > `GITHUB_TOKEN` *can* create same-repo PRs — the "Actions token cannot create PRs" assumption is
    > false; the only caveat is a `GITHUB_TOKEN`-opened PR won't re-trigger the `pull_request` gate
    > workflow (not needed here — `full` runs the gate inline).
-   - **All tracking lives on the PR.** The consolidated PR body carries the fix table, the CVEs
-     cleared, the **Stage 4 gate verdict**, links to the `depscan-reports/` PDFs, and references to
-     every `MAJOR_REVIEW` / `BUILD_BROKEN` / `INEFFECTIVE` follow-up issue (open those with
-     `mcp__github__create_issue` and link them back in the PR). Post the gate verdict as a PR review
-     via `mcp__github__create_pull_request_review`.
-   - **Always finish a `full` run with exactly one OPEN PR — never stop after Stage 1–2.** Even when
-     the branch already exists or the finding set is large, proceed through Stage 3 and Stage 4.
-     Decide PR state by **drift**, not by branch existence:
-     - `git fetch origin main` then diff `origin/main...fix/depscan-auto-remediation`. **No diff** →
-       `main` already contains the fixes → report "no drift — no PR" and stop.
-     - **Diff present + an OPEN PR already exists** for the branch → push the freshly rebuilt branch
-       to it (update in place, no duplicate).
-     - **Diff present + NO open PR** (first run, or the previous PR was closed/merged) → open a
-       **new** PR with `mcp__github__create_pull_request`. A closed prior PR does **not** count as
-       "already exists" — check PR **state** via `mcp__github__list_pull_requests` (state=open) and
-       open a fresh one if none are open.
+   - **Always open a fresh PR — never stop after Stage 1–2.** Proceed through Stage 3 and Stage 4 even
+     when the finding set is large. Decide by **drift**: `git fetch origin` then diff
+     `origin/HEAD...$BRANCH`. **No diff** (no applicable fixes) → report "no drift — no PR" and drop
+     the empty branch. **Diff present** → push `$BRANCH` and open a **new** PR with
+     `mcp__github__create_pull_request`. Because the branch is unique per run there is no duplicate
+     to reconcile; **do not** search for or update a prior PR, and **do not** close older `fix/depscan-*`
+     PRs (they are left open by design).
+   - **All tracking lives on the PR.** Title includes the branch/version for traceability. The body
+     carries the fix table, the CVEs cleared, the **Stage 4 gate verdict**, links to the
+     `depscan-reports/` PDFs, and references to every `MAJOR_REVIEW` / `BUILD_BROKEN` / `INEFFECTIVE`
+     follow-up issue (open those with `mcp__github__create_issue` and link them back in the PR). Post
+     the gate verdict as a PR review via `mcp__github__create_pull_request_review`.
 4. **Stage 4 — Merge gate.** Launch the `pr_validation_agent` on the resulting PR (`gate-only`
    behaviour): one build, then the three checks (tests, OWASP CVE, supply-chain audit), reusing the
    fresh Stage 1 / supply-chain reports. Post the PASS/BLOCK evidence **via the publishing adapter**
