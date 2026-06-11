@@ -84,8 +84,17 @@ Run the stages in order, stopping at the human-merge boundary:
      every `MAJOR_REVIEW` / `BUILD_BROKEN` / `INEFFECTIVE` follow-up issue (open those with
      `mcp__github__create_issue` and link them back in the PR). Post the gate verdict as a PR review
      via `mcp__github__create_pull_request_review`.
-   - **Idempotency:** if that branch/PR already exists, push updates to it (do not open a duplicate);
-     if there are no new fixable findings, stop and report "no drift — no PR".
+   - **Always finish a `full` run with exactly one OPEN PR — never stop after Stage 1–2.** Even when
+     the branch already exists or the finding set is large, proceed through Stage 3 and Stage 4.
+     Decide PR state by **drift**, not by branch existence:
+     - `git fetch origin main` then diff `origin/main...fix/depscan-auto-remediation`. **No diff** →
+       `main` already contains the fixes → report "no drift — no PR" and stop.
+     - **Diff present + an OPEN PR already exists** for the branch → push the freshly rebuilt branch
+       to it (update in place, no duplicate).
+     - **Diff present + NO open PR** (first run, or the previous PR was closed/merged) → open a
+       **new** PR with `mcp__github__create_pull_request`. A closed prior PR does **not** count as
+       "already exists" — check PR **state** via `mcp__github__list_pull_requests` (state=open) and
+       open a fresh one if none are open.
 4. **Stage 4 — Merge gate.** Launch the `pr_validation_agent` on the resulting PR (`gate-only`
    behaviour): one build, then the three checks (tests, OWASP CVE, supply-chain audit), reusing the
    fresh Stage 1 / supply-chain reports. Post the PASS/BLOCK evidence **via the publishing adapter**
@@ -122,9 +131,11 @@ stylesheet (`templates/report/report.css`); see `templates/report/RENDER.md`. Do
 rendering because an older PDF exists — regenerate from this run's markdown.
 
 In `full` mode, `git add depscan-reports/ && git commit` these onto the fix branch **before opening
-the PR**, so they ride in the consolidated PR and CI uploads them as artifacts. The root JSON
-intermediates stay at the repo root (see Stage 1–2) for the artifact step; the human-readable PDFs
-live in `depscan-reports/`.
+the PR**, so they ride in the consolidated PR and CI uploads them as artifacts. **Always commit this
+run's freshly rendered PDFs/MD even if the branch already carries older copies — overwrite them so
+the PR never shows stale reports** (a `git diff --quiet -- depscan-reports/` that reports no change
+means the render did not actually run — re-render). The root JSON intermediates stay at the repo
+root (see Stage 1–2) for the artifact step; the human-readable PDFs live in `depscan-reports/`.
 
 ## Final output
 Report: mode, target/PR, per-stage outcome (scan counts → risk bands → remediation PR link → gate
