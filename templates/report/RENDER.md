@@ -14,11 +14,15 @@ CSS="${DEPSCAN_REPORT_CSS:-$PWD/templates/report/report.css}"
 
 npx --yes md-to-pdf \
   --stylesheet "$CSS" \
+  --launch-options '{"args":["--no-sandbox","--disable-setuid-sandbox"]}' \
   --pdf-options '{"format":"A4","margin":{"top":"18mm","bottom":"20mm","left":"16mm","right":"16mm"},"printBackground":true}' \
   --document-title "Dependency & Supply-Chain Report" \
   <report>.md
 # produces <report>.pdf next to the .md
 ```
+
+> **CI needs `--launch-options '{"args":["--no-sandbox"]}'`.** On GitHub-hosted runners headless
+> Chromium fails with "Failed to launch the browser process" unless the sandbox is disabled.
 
 > **`printBackground:true` is MANDATORY.** Without it headless Chromium drops every background colour,
 > so the blue title banner, the severity badge pills, and the blue table headers all render blank —
