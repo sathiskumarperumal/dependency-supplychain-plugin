@@ -16,7 +16,11 @@
 #   • workflow_dispatch    -> manual run (defaults to full)
 #
 # Required repo secrets:
-#   ANTHROPIC_API_KEY   — drives Claude Code (the agents/skills)
+#   CLAUDE_CODE_OAUTH_TOKEN — drives Claude Code (the agents/skills) using a Claude Pro/Max
+#                         subscription instead of pay-as-you-go API credits. Generate locally with
+#                         `claude setup-token` (valid ~1 year) and store it as this secret.
+#                         IMPORTANT: do NOT also set ANTHROPIC_API_KEY — if both are set the API key
+#                         wins and the OAuth token is ignored.
 #   NVD_API_KEY         — speeds up OWASP Dependency-Check's NVD sync
 #   ATLASSIAN_API_TOKEN — Jira API token (only if you want Jira audit comments; else the jira MCP
 #                         simply has no creds and Jira steps are skipped)
@@ -106,7 +110,9 @@ jobs:
 
       - name: Run the depscan pipeline (the plugin does everything)
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Subscription auth (Claude Pro/Max) via `claude setup-token` — no API credits needed.
+          # Do NOT set ANTHROPIC_API_KEY alongside this: the API key takes precedence and would win.
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # github MCP server auth (uses the auto GITHUB_TOKEN; swap to a PAT secret for cross-repo)
           GITHUB_PERSONAL_ACCESS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -117,6 +123,10 @@ jobs:
           EVENT: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+            echo "::error::CLAUDE_CODE_OAUTH_TOKEN secret is not set. Generate one locally with 'claude setup-token' (needs a Claude Pro/Max subscription) and add it under Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
           PR_ARG=""
           if [ "$EVENT" = "pull_request" ]; then PR_ARG="--pr $PR_NUMBER"; fi
           echo "Running: /depscan-pipeline . --mode $MODE $PR_ARG"
