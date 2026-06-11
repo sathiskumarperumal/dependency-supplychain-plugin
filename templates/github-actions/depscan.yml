@@ -34,8 +34,12 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "full | gate-only"
+        description: "Pipeline mode"
+        type: choice
         default: "full"
+        options:
+          - full
+          - gate-only
 
 permissions:
   contents: write                 # plugin pushes the fix branch
@@ -95,7 +99,7 @@ jobs:
           cp -r .depscan-plugin/agents   .claude/agents
           cp -r .depscan-plugin/skills   .claude/skills
 
-      - name: Configure MCP servers for CI (Linux: github + jira)
+      - name: "Configure MCP servers for CI (Linux: github + jira)"
         # The plugin's own .mcp.json is Windows-only (cmd /c ...). This Linux CI variant runs the
         # github + jira MCP servers via npx so the agents' mcp__github__* / mcp__jira__* tools resolve.
         run: cp .depscan-plugin/templates/github-actions/mcp.ci.json ./.mcp.json
