@@ -1,7 +1,7 @@
 ---
 description: Orchestrate the full dependency & supply-chain pipeline end-to-end in one run, against a repo from ANY Git host (GitHub, GitLab, Bitbucket, self-hosted). Mode `full` = Stage 1 scan → Stage 2 risk score → Stage 3 auto-remediation (one consolidated PR/MR) → Stage 4 merge gate. Mode `gate-only` = run just the Stage 4 gate on an existing PR/MR. Never auto-merges — posts an approval-ready verdict for a human. Single entry point that schedulers and CI call.
 argument-hint: <repo-path-or-Git-URL> [--mode full|gate-only] [--pr <number>] [jira-id]
-allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, TodoWrite, Agent]
+allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, TodoWrite, Agent, mcp__github, mcp__jira]
 ---
 
 # Depscan Pipeline — Orchestrator
@@ -61,14 +61,31 @@ Run the stages in order, stopping at the human-merge boundary:
 1. **Checkout (once).** Clone/checkout the target into the working tree. Record the head SHA.
 2. **Stage 1–2 — Scan + Risk score.** Launch the `risk_scoring_agent` against the working tree. It
    runs the Stage 1 dependency scan (writing `depscan-report.json`, stamped with `source_sha`) and
-   produces the ranked `depscan-risk-report.json`. Reuse a fresh report if one already exists for
-   this SHA.
+   produces the ranked `depscan-risk-report.json`.
+   > **CI runners start empty — always (re)generate.** Only reuse a prior report if the file is
+   > physically present in *this* working tree AND its `source_sha` matches the current head SHA.
+   > Never assume a previous run's files persist and never "reuse" a report you cannot read off
+   > disk right now. The JSON files (`depscan-report.json`, `depscan-risk-report.json`, and the
+   > Stage-4 `depscan-supplychain-audit.json` + `target/sbom.cdx.json`) MUST exist at the repo root
+   > at the end of the run so CI can upload them as artifacts.
 3. **Stage 3 — Auto-remediation.** Apply `skills/depscan-auto-remediation/SKILL.md`: batch all safe
    fixes onto the single branch `fix/depscan-auto-remediation`, build once (`mvn -q test package`),
    re-scan to confirm CVEs cleared, and open/update **one consolidated PR/MR via the publishing
-   adapter** (GitHub PR · GitLab MR · else push + manual-MR link). **Idempotency:** if that branch/PR
-   already exists, push updates to it (do not open a duplicate); if there are no new fixable findings,
-   stop and report "no drift — no PR".
+   adapter** (GitHub PR · GitLab MR · else push + manual-MR link).
+   > **On GitHub you MUST actually open the PR — do not stop at a compare URL.** A token is present
+   > (`GITHUB_TOKEN` feeds the github MCP in CI), so call `mcp__github__create_pull_request`
+   > directly; if that errors, fall back to `gh pr create` (preinstalled on GitHub runners). Only
+   > emit a manual `<compare-url>` when the host is genuinely non-GitHub or no token exists. The Actions
+   > `GITHUB_TOKEN` *can* create same-repo PRs — the "Actions token cannot create PRs" assumption is
+   > false; the only caveat is a `GITHUB_TOKEN`-opened PR won't re-trigger the `pull_request` gate
+   > workflow (not needed here — `full` runs the gate inline).
+   - **All tracking lives on the PR.** The consolidated PR body carries the fix table, the CVEs
+     cleared, the **Stage 4 gate verdict**, links to the `depscan-reports/` PDFs, and references to
+     every `MAJOR_REVIEW` / `BUILD_BROKEN` / `INEFFECTIVE` follow-up issue (open those with
+     `mcp__github__create_issue` and link them back in the PR). Post the gate verdict as a PR review
+     via `mcp__github__create_pull_request_review`.
+   - **Idempotency:** if that branch/PR already exists, push updates to it (do not open a duplicate);
+     if there are no new fixable findings, stop and report "no drift — no PR".
 4. **Stage 4 — Merge gate.** Launch the `pr_validation_agent` on the resulting PR (`gate-only`
    behaviour): one build, then the three checks (tests, OWASP CVE, supply-chain audit), reusing the
    fresh Stage 1 / supply-chain reports. Post the PASS/BLOCK evidence **via the publishing adapter**
@@ -96,11 +113,18 @@ the gate verdict for the PR/MR that triggered it.
 - **Never drop work silently.** `MAJOR_REVIEW`, `BUILD_BROKEN`, and `INEFFECTIVE` items are raised as
   tracking issues, not folded into the PR.
 
-## Reports (professional PDFs)
-Each run renders human-readable PDFs into **`depscan-reports/`** (CVE-Report, Risk-Scoring-Report,
-Audit-Trail-Report) via `md-to-pdf` + the shared stylesheet (`templates/report/report.css`). In
-`full` mode they are committed onto the fix branch so the PR reviewer can read them; see each
-report skill and `templates/report/RENDER.md`.
+## Reports (professional PDFs) — required every run
+Every run MUST write the three reports as **both `.md` and a rendered `.pdf`** into
+**`depscan-reports/`**: `CVE-Report`, `Risk-Scoring-Report`, and the final `Audit-Trail-Report`
+(produced by the `depscan-audit-trail` skill — it is the consolidated final report, not optional).
+Render each `.md → .pdf` with `md-to-pdf` (use `npx md-to-pdf` if not installed) + the shared
+stylesheet (`templates/report/report.css`); see `templates/report/RENDER.md`. Do **not** skip
+rendering because an older PDF exists — regenerate from this run's markdown.
+
+In `full` mode, `git add depscan-reports/ && git commit` these onto the fix branch **before opening
+the PR**, so they ride in the consolidated PR and CI uploads them as artifacts. The root JSON
+intermediates stay at the repo root (see Stage 1–2) for the artifact step; the human-readable PDFs
+live in `depscan-reports/`.
 
 ## Final output
 Report: mode, target/PR, per-stage outcome (scan counts → risk bands → remediation PR link → gate

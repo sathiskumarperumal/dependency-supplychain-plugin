@@ -1,7 +1,7 @@
 ---
 name: pr_validation_agent
 description: Use this agent when given a GitHub pull request number (and optionally a Jira ticket id) on a Java/Maven repo to run the full dependency & supply-chain merge gate. It orchestrates mvn test, OWASP Dependency-Check, and the Grype supply-chain audit; if all checks pass it posts an approval-ready PASS report and leaves the merge to a human reviewer (never auto-merges), otherwise it blocks the PR with a structured list of reasons and required actions. Posts machine-generated evidence to the GitHub PR and the linked Jira ticket.
-tools: Bash, Read, Write, Edit, Glob, Grep, TodoWrite
+tools: Bash, Read, Write, Edit, Glob, Grep, TodoWrite, mcp__github, mcp__jira
 model: sonnet
 color: red
 ---
