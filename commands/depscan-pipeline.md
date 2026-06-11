@@ -76,13 +76,15 @@ Run the stages in order, stopping at the human-merge boundary:
      `fix/depscan-$(date -u +%Y%m%d-%H%M%S)`. Create it fresh off the default-branch tip — never
      reuse a static/shared branch, so each run is isolated and always yields a clean PR. Capture the
      name once and reuse it for the push and the PR.
-   > **On GitHub you MUST actually open the PR — do not stop at a compare URL.** A token is present
-   > (`GITHUB_TOKEN` feeds the github MCP in CI), so call `mcp__github__create_pull_request`
-   > directly; if that errors, fall back to `gh pr create` (preinstalled on GitHub runners). Only
-   > emit a manual `<compare-url>` when the host is genuinely non-GitHub or no token exists. The Actions
-   > `GITHUB_TOKEN` *can* create same-repo PRs — the "Actions token cannot create PRs" assumption is
-   > false; the only caveat is a `GITHUB_TOKEN`-opened PR won't re-trigger the `pull_request` gate
-   > workflow (not needed here — `full` runs the gate inline).
+   > **On GitHub you MUST actually open the PR — do not stop at a compare URL.** Call
+   > `mcp__github__create_pull_request` directly; if that errors, fall back to `gh pr create`. This
+   > requires the repo setting **Settings → Actions → General → "Allow GitHub Actions to create and
+   > approve pull requests"** to be enabled (so the Actions `GITHUB_TOKEN` may open PRs), **or** a
+   > user PAT supplied to the github MCP. If creation returns **403 "not permitted to create … pull
+   > requests"**, that setting is off — only then emit the manual `<compare-url>` plus a one-line hint
+   > to enable the setting (or add a PAT secret). Also emit the compare URL when the host is genuinely
+   > non-GitHub. (A `GITHUB_TOKEN`-opened PR won't re-trigger the `pull_request` gate workflow — fine
+   > here, `full` runs the gate inline.)
    - **Always open a fresh PR — never stop after Stage 1–2.** Proceed through Stage 3 and Stage 4 even
      when the finding set is large. Decide by **drift**: `git fetch origin` then diff
      `origin/HEAD...$BRANCH`. **No diff** (no applicable fixes) → report "no drift — no PR" and drop

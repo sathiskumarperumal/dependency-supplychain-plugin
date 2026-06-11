@@ -26,6 +26,11 @@
 #                         simply has no creds and Jira steps are skipped)
 #   (GITHUB_TOKEN is provided automatically and feeds the github MCP server for PRs/reviews/issues.)
 #
+# REQUIRED repo setting for auto-PR: Settings -> Actions -> General -> Workflow permissions ->
+#   enable "Allow GitHub Actions to create and approve pull requests" (and Read+write permissions).
+#   Without it the GITHUB_TOKEN gets 403 on PR creation and the pipeline can only print a compare URL.
+#   Alternative: put a user PAT in the github MCP (GITHUB_PERSONAL_ACCESS_TOKEN) instead of GITHUB_TOKEN.
+#
 # The plugin repo is PUBLIC, so no token is needed to check it out.
 # Governance: this workflow NEVER merges. Require a human review via branch protection.
 
