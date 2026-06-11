@@ -145,6 +145,32 @@ jobs:
             --dangerously-skip-permissions \
             --output-format text
 
+      - name: Render report PDFs (styled)
+        if: always()
+        # Deterministic PDF render so the reports always match the professional report.css format
+        # (blue banner, severity badge pills, styled tables, callout boxes) regardless of how the
+        # orchestrator rendered them. printBackground:true is REQUIRED or Chromium drops all colours.
+        run: |
+          [ -d depscan-reports ] || { echo "no depscan-reports/, skip"; exit 0; }
+          CSS="$PWD/.depscan-plugin/templates/report/report.css"
+          for md in depscan-reports/*.md; do
+            [ -e "$md" ] || continue
+            npx --yes md-to-pdf --stylesheet "$CSS" \
+              --pdf-options '{"format":"A4","margin":{"top":"18mm","bottom":"20mm","left":"16mm","right":"16mm"},"printBackground":true}' \
+              "$md"
+          done
+          # If the pipeline left us on a fix branch, commit the styled PDFs so they ride in the PR.
+          BR="$(git rev-parse --abbrev-ref HEAD)"
+          case "$BR" in
+            fix/depscan-*)
+              git config user.email "depscan-bot@users.noreply.github.com"
+              git config user.name  "Depscan Bot"
+              git add depscan-reports/*.pdf
+              git diff --cached --quiet || { git commit -m "ci: render styled report PDFs (report.css)"; git push origin "HEAD:$BR"; }
+              ;;
+            *) echo "not on a fix branch ($BR) — PDFs rendered for the artifact only";;
+          esac
+
       - name: Upload pipeline reports
         if: always()
         uses: actions/upload-artifact@v4

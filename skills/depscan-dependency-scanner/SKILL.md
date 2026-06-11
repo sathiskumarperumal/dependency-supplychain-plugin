@@ -194,11 +194,23 @@ Report to the user:
 Hand `depscan-report.json` to the **Risk Scoring Agent** (Stage 2) for prioritization.
 
 ### Professional PDF (for humans / PR review)
-Also emit a human-readable **`CVE-Report.md`** (title block + summary counts + CVE table with
-severity badges + supply-chain alerts) and render it to **`depscan-reports/CVE-Report.pdf`** using
-the shared stylesheet — see `templates/report/RENDER.md`:
+Also emit a human-readable **`CVE-Report.md`** in the house style so it renders to the professional
+format:
+- a `# H1` title (e.g. `# CVE Report — Dependency Scan`) — this becomes the banner;
+- the **metadata line as the paragraph directly under the H1** (`Project: … · Stage 1 … · Generated …`);
+- summary-counts table and the CVE table, with severity cells as
+  `<span class="badge crit">CRITICAL</span>` / `… high` / `… med` / `… low`;
+- **supply-chain alerts as `>` blockquotes** (each becomes a yellow callout box), e.g.
+  `> **CRITICAL — Typosquatted dependency.** …`.
+
+Then render to **`depscan-reports/CVE-Report.pdf`** with the shared stylesheet — see
+`templates/report/RENDER.md`. The `--stylesheet` path must resolve and `printBackground:true` is
+mandatory (or the banner/badges render blank):
 ```bash
-npx --yes md-to-pdf --stylesheet templates/report/report.css \
+CSS="${DEPSCAN_REPORT_CSS:-$PWD/templates/report/report.css}"
+npx --yes md-to-pdf --stylesheet "$CSS" \
   --pdf-options '{"format":"A4","margin":"18mm","printBackground":true}' CVE-Report.md
 ```
-Keep the `.json` (machines), `.md` (diffs) and `.pdf` (humans) together under `depscan-reports/`.
+> In CI, rendering is done by the workflow's "Render report PDFs (styled)" step — the skill only
+> needs to write `CVE-Report.md`. Keep the `.json` (machines), `.md` (diffs) and `.pdf` (humans)
+> together under `depscan-reports/`.

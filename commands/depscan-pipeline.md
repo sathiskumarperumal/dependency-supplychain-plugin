@@ -125,19 +125,24 @@ the gate verdict for the PR/MR that triggered it.
   tracking issues, not folded into the PR.
 
 ## Reports (professional PDFs) — required every run
-Every run MUST write the three reports as **both `.md` and a rendered `.pdf`** into
-**`depscan-reports/`**: `CVE-Report`, `Risk-Scoring-Report`, and the final `Audit-Trail-Report`
-(produced by the `depscan-audit-trail` skill — it is the consolidated final report, not optional).
-Render each `.md → .pdf` with `md-to-pdf` (use `npx md-to-pdf` if not installed) + the shared
-stylesheet (`templates/report/report.css`); see `templates/report/RENDER.md`. Do **not** skip
-rendering because an older PDF exists — regenerate from this run's markdown.
+Every run MUST write the three reports as **Markdown** into **`depscan-reports/`**: `CVE-Report.md`,
+`Risk-Scoring-Report.md`, and the final `Audit-Trail-Report.md` (produced by the `depscan-audit-trail`
+skill — the consolidated final report, not optional). The Markdown is what the professional format
+keys off, so it MUST follow the house style: a `# H1` title (becomes the banner), the metadata line
+as the paragraph **immediately under** the H1, `<span class="badge crit|high|med|low|ok">…</span>`
+severity badges, `>` blockquotes for supply-chain callouts, and tables. See
+`templates/report/RENDER.md` and the report skills for the exact section layout.
 
-In `full` mode, `git add depscan-reports/ && git commit` these onto the fix branch **before opening
-the PR**, so they ride in the consolidated PR and CI uploads them as artifacts. **Always commit this
-run's freshly rendered PDFs/MD even if the branch already carries older copies — overwrite them so
-the PR never shows stale reports** (a `git diff --quiet -- depscan-reports/` that reports no change
-means the render did not actually run — re-render). The root JSON intermediates stay at the repo
-root (see Stage 1–2) for the artifact step; the human-readable PDFs live in `depscan-reports/`.
+**PDF rendering:**
+- **In CI, do NOT render PDFs yourself** — a dedicated workflow step ("Render report PDFs (styled)")
+  renders every `depscan-reports/*.md` with the correct `--stylesheet` + `printBackground:true` and
+  commits the PDFs onto the fix branch. You only need to produce and commit the `.md` files.
+- **Locally / non-CI**, render with `md-to-pdf` per `templates/report/RENDER.md` (correct
+  `--stylesheet` path + `printBackground:true` are mandatory, or the banner/badges render blank).
+
+In `full` mode, `git add depscan-reports/ && git commit` the Markdown onto the fix branch **before
+opening the PR**, so the reports ride in the consolidated PR and CI uploads them as artifacts. The
+root JSON intermediates stay at the repo root (see Stage 1–2) for the artifact step.
 
 ## Final output
 Report: mode, target/PR, per-stage outcome (scan counts → risk bands → remediation PR link → gate

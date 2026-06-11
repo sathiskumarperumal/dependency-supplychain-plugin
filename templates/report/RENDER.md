@@ -7,13 +7,27 @@ This runs anywhere Node is available — including the GitHub Actions runner ("r
 ## One render command (per report)
 
 ```bash
+# Stylesheet path MUST be correct or the PDF renders unstyled. Use $DEPSCAN_REPORT_CSS if the caller
+# set it; otherwise the plugin's own copy. In CI the plugin is checked out at .depscan-plugin/, so the
+# absolute path is "$PWD/.depscan-plugin/templates/report/report.css".
+CSS="${DEPSCAN_REPORT_CSS:-$PWD/templates/report/report.css}"
+
 npx --yes md-to-pdf \
-  --stylesheet "<plugin>/templates/report/report.css" \
+  --stylesheet "$CSS" \
   --pdf-options '{"format":"A4","margin":{"top":"18mm","bottom":"20mm","left":"16mm","right":"16mm"},"printBackground":true}' \
   --document-title "Dependency & Supply-Chain Report" \
   <report>.md
 # produces <report>.pdf next to the .md
 ```
+
+> **`printBackground:true` is MANDATORY.** Without it headless Chromium drops every background colour,
+> so the blue title banner, the severity badge pills, and the blue table headers all render blank —
+> the PDF looks like plain text. A missing/wrong `--stylesheet` path has the same effect: verify the
+> CSS file exists before rendering.
+>
+> **In CI you do not render manually** — the GitHub Actions workflow has a dedicated
+> "Render report PDFs (styled)" step that renders every `depscan-reports/*.md` with the correct
+> stylesheet and commits the PDFs onto the fix branch. The skills only need to produce the `.md`.
 
 ## Output layout (committed on the fix branch for the reviewer)
 
